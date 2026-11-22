@@ -744,6 +744,11 @@ public class NXDNDecoderState extends DecoderState
                 mEncryptedCallStateDetermined = true;
                 mEncryptedCall = info1 instanceof InitializationVectorPart1 ||
                         info1.getCipherType() != CipherType.UNENCRYPTED;
+
+                if(mEncryptedCall)
+                {
+                    mTrafficChannelManager.processEncryptedCall(getCurrentChannel(), layer3.getTimestamp());
+                }
             }
 
             state = (mEncryptedCallStateDetermined && mEncryptedCall) ? State.ENCRYPTED : State.CALL;

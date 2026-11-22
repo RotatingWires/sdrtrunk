@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
+import io.github.dsheirer.module.decode.config.WithIgnoreEncryptedCalls;
 import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
 import io.github.dsheirer.module.decode.dmr.message.DMRMessage;
 import io.github.dsheirer.module.decode.event.DecodeEvent;
@@ -32,13 +33,14 @@ import java.util.List;
 /**
  * DMR Decoder Configuration
  */
-public class DecodeConfigDMR extends DecodeConfigJMBE
+public class DecodeConfigDMR extends DecodeConfigJMBE implements WithIgnoreEncryptedCalls
 {
     public static final int CHANNEL_ROTATION_DELAY_MINIMUM_MS = 200;
     public static final int CHANNEL_ROTATION_DELAY_DEFAULT_MS = 500;
     public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 2000;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = true;
+    private boolean mIgnoreEncryptedCalls = false;
     private boolean mIgnoreCRCChecksums = false;
     private boolean mUseCompressedTalkgroups = false;
     private List<TimeslotFrequency> mTimeslotMap = new ArrayList<>();
@@ -90,6 +92,27 @@ public class DecodeConfigDMR extends DecodeConfigJMBE
     public void setIgnoreDataCalls(boolean ignore)
     {
         mIgnoreDataCalls = ignore;
+    }
+
+    /**
+     * Indicates if the traffic channel manager should not allocate (ie tune) a traffic channel for a channel grant
+     * that identifies the call as encrypted, and should release a traffic channel that detects an encrypted call after
+     * it is tuned.
+     */
+    @Override
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_encrypted_calls")
+    public boolean getIgnoreEncryptedCalls()
+    {
+        return mIgnoreEncryptedCalls;
+    }
+
+    /**
+     * Sets the ignore encrypted calls option.
+     * @param ignore true to not allocate, or to release, traffic channels for encrypted calls.
+     */
+    public void setIgnoreEncryptedCalls(boolean ignore)
+    {
+        mIgnoreEncryptedCalls = ignore;
     }
 
     /**

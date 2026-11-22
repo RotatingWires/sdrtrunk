@@ -1443,6 +1443,13 @@ public class DMRDecoderState extends TimeslotDecoderState
                 mCurrentCallEvent.setDetails(details);
             }
 
+            //The call event preloaded from the channel grant doesn't always know that the call is encrypted
+            if(DecodeEventType.VOICE_CALLS_ENCRYPTED.contains(type) &&
+                    !DecodeEventType.VOICE_CALLS_ENCRYPTED.contains(mCurrentCallEvent.getEventType()))
+            {
+                mCurrentCallEvent.setDecodeEventType(type);
+            }
+
             mCurrentCallEvent.setIdentifierCollection(getIdentifierCollection().copyOf());
             mCurrentCallEvent.end(timestamp);
         }

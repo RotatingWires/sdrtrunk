@@ -27,6 +27,7 @@ import io.github.dsheirer.controller.channel.IChannelEventProvider;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.IdentifierUpdateProvider;
 import io.github.dsheirer.module.Module;
+import io.github.dsheirer.module.decode.config.WithIgnoreEncryptedCalls;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
 import io.github.dsheirer.module.decode.event.IDecodeEventProvider;
 import io.github.dsheirer.sample.IOverflowListener;
@@ -54,6 +55,7 @@ public abstract class AbstractChannelState extends Module implements IChannelEve
     private HeartbeatReceiver mHeartbeatReceiver = new HeartbeatReceiver();
     protected boolean mTeardownSequenceStarted = false;
     protected boolean mTeardownSequenceCompleted = false;
+    private boolean mEncryptedReleaseRequested = false;
 
     //TODO: remove the IOverflowListener code from this class
 
@@ -80,6 +82,47 @@ public abstract class AbstractChannelState extends Module implements IChannelEve
     public boolean isTeardownSequenceStarted()
     {
         return mTeardownSequenceStarted;
+    }
+
+    /**
+     * Indicates if this is a traffic channel whose decoder configuration ignores encrypted calls, meaning that the
+     * traffic channel is released when it detects an encrypted call instead of holding a tuner channel for the length
+     * of a call that can't be listened to.
+     */
+    protected boolean isIgnoreEncryptedTrafficChannel()
+    {
+        return getChannel().isTrafficChannel() &&
+                getChannel().getDecodeConfiguration() instanceof WithIgnoreEncryptedCalls config &&
+                config.getIgnoreEncryptedCalls();
+    }
+
+    /**
+     * Requests that the channel processing manager stops this traffic channel because it is carrying an encrypted
+     * call.  The traffic channel manager that owns the channel keeps the call event so that further channel grant
+     * updates for the call don't tune the channel again.  Only the first request is dispatched until the channel
+     * state is restarted.
+     */
+    protected void releaseEncryptedTrafficChannel()
+    {
+        if(!mEncryptedReleaseRequested)
+        {
+            mEncryptedReleaseRequested = true;
+            mTeardownSequenceStarted = true;
+
+            if(mChannelEventListener != null)
+            {
+                mChannelEventListener.receive(new ChannelEvent(getChannel(), ChannelEvent.Event.REQUEST_DISABLE));
+                mTeardownSequenceCompleted = true;
+            }
+        }
+    }
+
+    /**
+     * Clears the encrypted release request so that a reused (ie restarted) traffic channel can be released again.
+     */
+    protected void clearEncryptedReleaseRequest()
+    {
+        mEncryptedReleaseRequested = false;
     }
 
     /**

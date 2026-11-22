@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
+import io.github.dsheirer.module.decode.config.WithIgnoreEncryptedCalls;
 import io.github.dsheirer.module.decode.p25.phase2.DecodeConfigP25Phase2;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
@@ -30,7 +31,7 @@ import io.github.dsheirer.module.decode.p25.phase2.DecodeConfigP25Phase2;
         @JsonSubTypes.Type(value = DecodeConfigP25Phase1.class, name = "decodeConfigP25Phase1"),
         @JsonSubTypes.Type(value = DecodeConfigP25Phase2.class, name = "decodeConfigP25Phase2"),
 })
-public abstract class DecodeConfigP25 extends DecodeConfigJMBE
+public abstract class DecodeConfigP25 extends DecodeConfigJMBE implements WithIgnoreEncryptedCalls
 {
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = false;
@@ -53,8 +54,10 @@ public abstract class DecodeConfigP25 extends DecodeConfigJMBE
 
     /**
      * Indicates if the traffic channel manager should not allocate (ie tune) a traffic channel for a channel grant
-     * where the service options indicate the call is encrypted.
+     * where the service options indicate the call is encrypted, and should release a traffic channel that detects an
+     * encrypted call after it is tuned.
      */
+    @Override
     @JacksonXmlProperty(isAttribute = true, localName = "ignore_encrypted_calls")
     public boolean getIgnoreEncryptedCalls()
     {
@@ -63,7 +66,7 @@ public abstract class DecodeConfigP25 extends DecodeConfigJMBE
 
     /**
      * Sets the ignore encrypted calls option.
-     * @param ignore true to not allocate traffic channels for encrypted calls.
+     * @param ignore true to not allocate, or to release, traffic channels for encrypted calls.
      */
     public void setIgnoreEncryptedCalls(boolean ignore)
     {

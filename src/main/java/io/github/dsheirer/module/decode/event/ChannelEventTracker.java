@@ -259,6 +259,15 @@ public abstract class ChannelEventTracker<T extends DecodeEvent>
     }
 
     /**
+     * Hands event duration updates back to the control channel when the traffic channel stops processing while the
+     * call continues, for example when the traffic channel is released because the call is encrypted.
+     */
+    public void resumeControlUpdates()
+    {
+        mStarted = false;
+    }
+
+    /**
      * Mark the event as complete and assign final end timestamp to the event.
      *
      * Note: further attempts to complete an already complete event are ignored.

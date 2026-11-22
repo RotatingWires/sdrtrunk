@@ -82,6 +82,7 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
     private static final Logger LOGGER = LoggerFactory.getLogger(NXDNTrafficChannelManager.class);
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     public static final String CHANNEL_START_REJECTED = "CHANNEL START REJECTED";
+    public static final String IGNORED_ENCRYPTED = "IGNORED ENCRYPTED";
     private final Channel mParentChannel;
     private final DecodeEventDuplicateDetector mDuplicateDetector = new DecodeEventDuplicateDetector();
     private final List<ChannelFrequency> mChannelFrequencies = new ArrayList<>();
@@ -111,7 +112,7 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
         if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigNXDN configNXDN)
         {
             mIgnoreDataCalls = configNXDN.isIgnoreDataCalls();
-            mIgnoreEncryptedCalls = configNXDN.isIgnoreEncryptedCalls();
+            mIgnoreEncryptedCalls = configNXDN.getIgnoreEncryptedCalls();
             mChannelFrequencies.addAll(configNXDN.getChannelMap());
             createTrafficChannels(configNXDN);
         }
@@ -510,6 +511,32 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
     }
 
     /**
+     * Marks the tracked call on the traffic channel as encrypted when the traffic channel determines the encryption
+     * state from the call information or initialization vector (ie it missed the voice call message).
+     * @param channel descriptor for the traffic channel
+     * @param timestamp of the message
+     */
+    public void processEncryptedCall(IChannelDescriptor channel, long timestamp)
+    {
+        mLock.lock();
+
+        try
+        {
+            long frequency = channel != null ? channel.getDownlinkFrequency() : 0;
+            NXDNChannelEventTracker tracker = getTrackerRemoveIfStale(frequency, timestamp);
+
+            if(tracker != null)
+            {
+                tracker.setEncrypted();
+            }
+        }
+        finally
+        {
+            mLock.unlock();
+        }
+    }
+
+    /**
      * Ends the current call and removes the event tracker
      * @param channel for the call
      * @param timestamp for the end call
@@ -585,11 +612,16 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
                 }
             }
 
-            boolean ignoreEncrypted = mIgnoreEncryptedCalls && encryption.isEncrypted();
+            if(encryption.isEncrypted())
+            {
+                tracker.setEncrypted();
+            }
+
+            boolean ignoreEncrypted = mIgnoreEncryptedCalls && tracker.isEncrypted();
 
             if(ignoreEncrypted)
             {
-                tracker.prefixDetails("IGNORED ENCRYPTED");
+                tracker.prefixDetails(IGNORED_ENCRYPTED);
             }
             else if(!tracker.isTrafficChannelAllocated() && channel != null && channel.isValid() &&
                     channel.getDownlinkFrequency() != getCurrentControlFrequency() &&
@@ -775,6 +807,28 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
     }
 
     /**
+     * Processes the tracked call event of a traffic channel that stopped processing.  When ignoring encrypted calls,
+     * an encrypted call (ie the traffic channel was released because the call is encrypted) is updated from the
+     * control channel again, so that the tracker doesn't go stale and allow further voice call assignments for the
+     * call to allocate the traffic channel again.
+     *
+     * Note: this method is not thread safe and the calling method must protect access using mLock.
+     *
+     * @param frequency of the stopped traffic channel
+     */
+    private void processTrafficChannelStopped(long frequency)
+    {
+        NXDNChannelEventTracker tracker = mEventTrackerMap.get(frequency);
+
+        if(tracker != null && mIgnoreEncryptedCalls && tracker.isEncrypted())
+        {
+            tracker.resumeControlUpdates();
+            tracker.prefixDetails(IGNORED_ENCRYPTED);
+            broadcast(tracker);
+        }
+    }
+
+    /**
      * Monitors channel teardown events to detect when traffic channel processing has ended or channel start has been
      * rejected.  Reclaims the traffic channel instance for reuse by future traffic channel grants.
      */
@@ -811,7 +865,7 @@ public class NXDNTrafficChannelManager extends TrafficChannelManager implements 
                                         //reference the now terminating traffic channel and cause a residual event
                                         //creation and channel allocation and we'll use the tracker to keep that from
                                         //happening.
-                                        //removeTracker(frequency);
+                                        processTrafficChannelStopped(frequency);
                                         mAvailableTrafficChannelQueue.add(channel);
                                     });
                             break;

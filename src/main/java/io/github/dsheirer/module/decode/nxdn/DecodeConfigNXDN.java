@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
+import io.github.dsheirer.module.decode.config.WithIgnoreEncryptedCalls;
 import io.github.dsheirer.module.decode.nxdn.channel.ChannelFrequency;
 import io.github.dsheirer.module.decode.nxdn.layer3.proprietary.Encoding;
 import io.github.dsheirer.module.decode.nxdn.layer3.type.TransmissionMode;
@@ -33,7 +34,7 @@ import java.util.List;
 /**
  * NXDN decoder configuration
  */
-public class DecodeConfigNXDN extends DecodeConfigJMBE
+public class DecodeConfigNXDN extends DecodeConfigJMBE implements WithIgnoreEncryptedCalls
 {
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = false;
@@ -121,8 +122,9 @@ public class DecodeConfigNXDN extends DecodeConfigJMBE
      * Ignore encrypted calls
      * @return true if ignore
      */
+    @Override
     @JacksonXmlProperty(isAttribute = true, localName = "ignore_encrypted_calls")
-    public boolean isIgnoreEncryptedCalls()
+    public boolean getIgnoreEncryptedCalls()
     {
         return mIgnoreEncryptedCalls;
     }

@@ -20,6 +20,7 @@ package io.github.dsheirer.module.decode.dmr;
 
 import com.google.common.eventbus.Subscribe;
 import io.github.dsheirer.channel.IBandChannelDescriptor;
+import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.ChannelConversionRequest;
@@ -92,6 +93,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private final static Logger mLog = LoggerFactory.getLogger(DMRTrafficChannelManager.class);
     public static final String CHANNEL_START_REJECTED = " REJECTED - NO TUNER";
     public static final String DATA_CALL_IGNORED = "DATA CALL IGNORED";
+    public static final String ENCRYPTED_CALL_IGNORED = "IGNORED: ENCRYPTED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     public static final String NO_FREQUENCY = "NO FREQUENCY - CHECK PLAYLIST CHANNEL CONFIG LSN CHANNEL MAP";
     public static final long EVENT_TIME_STALE_THRESHOLD = 5000; //5 seconds
@@ -108,6 +110,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private TalkerAliasManager mTalkerAliasManager = new TalkerAliasManager();
     private Channel mParentChannel;
     private boolean mIgnoreDataCalls;
+    private boolean mIgnoreEncryptedCalls;
 
     //Used as temporary storage for message and decode event history during Cap+ REST channel rotation
     private DecodeEventHistory mTransientDecodeEventHistory;
@@ -124,9 +127,10 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     {
         mParentChannel = parentChannel;
 
-        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR)
+        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR config)
         {
-            mIgnoreDataCalls = ((DecodeConfigDMR)parentChannel.getDecodeConfiguration()).getIgnoreDataCalls();
+            mIgnoreDataCalls = config.getIgnoreDataCalls();
+            mIgnoreEncryptedCalls = config.getIgnoreEncryptedCalls();
         }
 
         createTrafficChannels();
@@ -372,7 +376,49 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      */
     public void receiveTrafficChannelEvent(IDecodeEvent trafficChannelEvent)
     {
+        if(mIgnoreEncryptedCalls && isEncrypted(trafficChannelEvent))
+        {
+            rememberEncryptedCall(trafficChannelEvent);
+        }
+
         broadcast(trafficChannelEvent);
+    }
+
+    /**
+     * Stores an encrypted call event from a traffic channel as the tracked call event for the frequency and timeslot.
+     * The traffic channel is released because the call is encrypted (see the channel state) and the channel grant
+     * updates that continue for the call are then recognized as an encrypted call that shouldn't be tuned again,
+     * even when the channel grant itself doesn't identify the call as encrypted.
+     *
+     * @param event for an encrypted call on a traffic channel.
+     */
+    private void rememberEncryptedCall(IDecodeEvent event)
+    {
+        IChannelDescriptor channel = event.getChannelDescriptor();
+
+        if(channel != null && channel.getDownlinkFrequency() > 0 && event.hasTimeslot())
+        {
+            mLock.lock();
+
+            try
+            {
+                Map<Long,IDecodeEvent> eventMap = event.getTimeslot() == 1 ? mCallEventsTS1 : mCallEventsTS2;
+                eventMap.put(channel.getDownlinkFrequency(), event);
+            }
+            finally
+            {
+                mLock.unlock();
+            }
+        }
+    }
+
+    /**
+     * Indicates if the event is for an encrypted voice or data call.
+     */
+    private static boolean isEncrypted(IDecodeEvent event)
+    {
+        return event != null && (DecodeEventType.VOICE_CALLS_ENCRYPTED.contains(event.getEventType()) ||
+                event.getEventType() == DecodeEventType.DATA_CALL_ENCRYPTED);
     }
 
     /**
@@ -473,6 +519,23 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
                     else if(!event.getDetails().endsWith(DATA_CALL_IGNORED))
                     {
                         event.setDetails(event.getDetails() + " - " + DATA_CALL_IGNORED);
+                    }
+
+                    broadcast(event);
+                    return;
+                }
+
+                //Don't allocate a traffic channel when the grant, or the traffic channel that was released earlier in
+                //the call, identifies the call as encrypted.
+                if(mIgnoreEncryptedCalls && (encrypted || isEncrypted(event)))
+                {
+                    if(event.getDetails() == null)
+                    {
+                        event.setDetails(ENCRYPTED_CALL_IGNORED);
+                    }
+                    else if(!event.getDetails().startsWith(ENCRYPTED_CALL_IGNORED))
+                    {
+                        event.setDetails(ENCRYPTED_CALL_IGNORED + " - " + event.getDetails());
                     }
 
                     broadcast(event);
@@ -765,7 +828,9 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     public class TrafficChannelTeardownMonitor implements Listener<ChannelEvent>
     {
         /**
-         * Removes any call events that are associated with the specified frequency.
+         * Removes any call events that are associated with the specified frequency.  When ignoring encrypted calls, an
+         * encrypted call event is kept so that the channel grant updates that continue for a released encrypted call
+         * don't allocate the traffic channel again.  The kept event goes stale once the grant updates stop.
          * @param frequency that was removed
          */
         private void removeCallEvents(long frequency)
@@ -774,8 +839,13 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
 
             try
             {
-                mCallEventsTS1.remove(frequency);
-                mCallEventsTS2.remove(frequency);
+                for(Map<Long,IDecodeEvent> eventMap: List.of(mCallEventsTS1, mCallEventsTS2))
+                {
+                    if(!(mIgnoreEncryptedCalls && isEncrypted(eventMap.get(frequency))))
+                    {
+                        eventMap.remove(frequency);
+                    }
+                }
             }
             finally
             {

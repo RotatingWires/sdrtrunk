@@ -163,6 +163,12 @@ public class SingleChannelState extends AbstractChannelState implements IDecoder
                 reset();
                 mStateMachine.setState(State.IDLE);
                 break;
+            case ENCRYPTED:
+                if(isIgnoreEncryptedTrafficChannel())
+                {
+                    releaseEncryptedTrafficChannel();
+                }
+                break;
             case TEARDOWN:
                 mTeardownSequenceStarted = true;
                 if(getChannel().isTrafficChannel())
@@ -317,6 +323,7 @@ public class SingleChannelState extends AbstractChannelState implements IDecoder
     @Override
     public void start()
     {
+        clearEncryptedReleaseRequest();
         mIdentifierCollection.broadcastIdentifiers();
 
         if(getChannel().isTrafficChannel())

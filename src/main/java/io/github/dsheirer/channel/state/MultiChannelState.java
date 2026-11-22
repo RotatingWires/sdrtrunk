@@ -176,6 +176,38 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
                 }
                 break;
         }
+
+        if(isIgnoreEncryptedTrafficChannel())
+        {
+            checkEncryptedRelease();
+        }
+    }
+
+    /**
+     * Releases the traffic channel when a timeslot is carrying an encrypted call and no timeslot is carrying a clear
+     * call or data.  This is checked on every state change so that a channel held open by a clear call on the other
+     * timeslot is released once that clear call ends while the encrypted call continues.
+     */
+    private void checkEncryptedRelease()
+    {
+        boolean encrypted = false;
+
+        for(StateMachine stateMachine: mStateMachineMap.values())
+        {
+            State state = stateMachine.getState();
+
+            if(state == State.CALL || state == State.DATA)
+            {
+                return;
+            }
+
+            encrypted |= state == State.ENCRYPTED;
+        }
+
+        if(encrypted)
+        {
+            releaseEncryptedTrafficChannel();
+        }
     }
 
     /**
@@ -400,6 +432,8 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
     @Override
     public void start()
     {
+        clearEncryptedReleaseRequest();
+
         for(int timeslot: mTimeslots)
         {
             mIdentifierCollectionMap.get(timeslot).broadcastIdentifiers();
