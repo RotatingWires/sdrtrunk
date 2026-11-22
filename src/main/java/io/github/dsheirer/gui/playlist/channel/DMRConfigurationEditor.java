@@ -80,6 +80,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreEncryptedCallsButton;
     private ToggleSwitch mIgnoreCRCChecksumsButton;
     private ToggleSwitch mUseCompressedTalkgroupsToggle;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
@@ -160,22 +161,31 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(ignoreDataLabel, 3, row);
             gridPane.getChildren().add(ignoreDataLabel);
 
-            GridPane.setConstraints(getIgnoreCRCChecksumsButton(), 4, row);
+            GridPane.setConstraints(getIgnoreEncryptedCallsButton(), 4, row);
+            gridPane.getChildren().add(getIgnoreEncryptedCallsButton());
+
+            Label ignoreEncryptedLabel = new Label("Ignore Encrypted Calls");
+            ignoreEncryptedLabel.setLabelFor(getIgnoreEncryptedCallsButton());
+            GridPane.setHalignment(ignoreEncryptedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreEncryptedLabel, 5, row);
+            gridPane.getChildren().add(ignoreEncryptedLabel);
+
+            GridPane.setConstraints(getIgnoreCRCChecksumsButton(), 6, row);
             gridPane.getChildren().add(getIgnoreCRCChecksumsButton());
 
             Label ignoreCRCLabel = new Label("Ignore CRC Checksums (RAS)");
             ignoreCRCLabel.setLabelFor(getIgnoreCRCChecksumsButton());
             GridPane.setHalignment(ignoreCRCLabel, HPos.LEFT);
-            GridPane.setConstraints(ignoreCRCLabel, 5, row);
+            GridPane.setConstraints(ignoreCRCLabel, 7, row);
             gridPane.getChildren().add(ignoreCRCLabel);
 
-            GridPane.setConstraints(getUseCompressedTalkgroupsToggle(), 6, row);
+            GridPane.setConstraints(getUseCompressedTalkgroupsToggle(), 8, row);
             gridPane.getChildren().add(getUseCompressedTalkgroupsToggle());
 
             Label useCompressedTalkgroupsLabel = new Label("Use Compressed Talkgroups");
             useCompressedTalkgroupsLabel.setLabelFor(getUseCompressedTalkgroupsToggle());
             GridPane.setHalignment(useCompressedTalkgroupsLabel, HPos.LEFT);
-            GridPane.setConstraints(useCompressedTalkgroupsLabel, 7, row);
+            GridPane.setConstraints(useCompressedTalkgroupsLabel, 9, row);
             gridPane.getChildren().add(useCompressedTalkgroupsLabel);
 
             Label timeslotTableLabel = new Label("Logical Channel Number (LCN) to Frequency Map. Required for: Connect Plus and Tier-III systems that don't use absolute frequencies.  LSN = Logical Slot Number");
@@ -520,6 +530,22 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreEncryptedCallsButton()
+    {
+        if(mIgnoreEncryptedCallsButton == null)
+        {
+            mIgnoreEncryptedCallsButton = new AccessibleToggleSwitch();
+            mIgnoreEncryptedCallsButton.setDisable(true);
+            mIgnoreEncryptedCallsButton.setTooltip(new Tooltip("Don't tune a traffic channel when the channel grant " +
+                    "indicates the call is encrypted, and release a traffic channel (and its tuner) as soon as it " +
+                    "detects an encrypted call.  The channel stays tuned while the other timeslot has a clear call."));
+            mIgnoreEncryptedCallsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreEncryptedCallsButton;
+    }
+
     private ToggleSwitch getIgnoreCRCChecksumsButton()
     {
         if(mIgnoreCRCChecksumsButton == null)
@@ -672,6 +698,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         boolean disable = config == null;
         getIgnoreCRCChecksumsButton().setDisable(disable);
         getIgnoreDataCallsButton().setDisable(disable);
+        getIgnoreEncryptedCallsButton().setDisable(disable);
         getUseCompressedTalkgroupsToggle().setDisable(disable);
         getTrafficChannelPoolSizeSpinner().setDisable(disable);
         getTimeslotTable().getItems().clear();
@@ -693,6 +720,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
             DecodeConfigDMR decodeConfig = (DecodeConfigDMR)config;
 
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
+            getIgnoreEncryptedCallsButton().setSelected(decodeConfig.getIgnoreEncryptedCalls());
             getIgnoreCRCChecksumsButton().setSelected(decodeConfig.getIgnoreCRCChecksums());
             getUseCompressedTalkgroupsToggle().setSelected(decodeConfig.isUseCompressedTalkgroups());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
@@ -711,6 +739,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         {
             getIgnoreCRCChecksumsButton().setSelected(false);
             getIgnoreDataCallsButton().setSelected(false);
+            getIgnoreEncryptedCallsButton().setSelected(false);
             getUseCompressedTalkgroupsToggle().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getChannelRotationDelaySpinner().getValueFactory().setValue(200);
@@ -737,6 +766,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
 
         config.setIgnoreCRCChecksums(getIgnoreCRCChecksumsButton().isSelected());
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreEncryptedCalls(getIgnoreEncryptedCallsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setUseCompressedTalkgroups(getUseCompressedTalkgroupsToggle().isSelected());
         config.setTimeslotMap(new ArrayList<>(getTimeslotTable().getItems()));

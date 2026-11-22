@@ -9,6 +9,60 @@
 # sdrtrunk
 A cross-platform java application for decoding, monitoring, recording and streaming trunked mobile and related radio protocols using Software Defined Radios (SDR).
 
+## About this fork
+This is a fork of [DSheirer/sdrtrunk](https://github.com/DSheirer/sdrtrunk) that makes the **Ignore Encrypted Calls**
+option drop encrypted calls completely, so that they never hold a tuner channel that a clear call could use.  Everything
+else matches upstream, and the upstream documentation linked below applies.
+
+### Ignore Encrypted Calls
+The option is in the playlist channel editor, in the **Decoder** section of a trunked channel (the control channel):
+
+| Decoder | Setting |
+|---|---|
+| P25 Phase 1 and P25 Phase 2 | Ignore Encrypted Calls |
+| DMR (Tier III, Capacity Plus, Connect Plus, Capacity Max) | Ignore Encrypted Calls (added by this fork) |
+| NXDN | Ignore: Encrypted Calls |
+
+It is off by default and is saved in the playlist as the `ignore_encrypted_calls` attribute of the decoder
+configuration.  Playlists saved without the attribute load with the option off, and a playlist saved by this fork
+still loads in upstream sdrtrunk.
+
+When the option is on, encrypted calls are dropped in two stages:
+
+1. **At the channel grant.**  When the channel grant (P25), voice call assignment (NXDN) or channel grant (DMR, using
+   the grant's protect flag) identifies the call as encrypted, no traffic channel is tuned.  Upstream sdrtrunk already
+   did this for P25 and NXDN.
+2. **After tuning.**  Many encrypted calls are only identified as encrypted once the traffic channel is decoding them,
+   for example when sdrtrunk joins a call in progress from a grant *update* (which carries no encryption flag), when the
+   grant was missed, or when the system doesn't flag encryption in its grants.  As soon as the traffic channel detects
+   encrypted audio (P25 HDU/LDU/MAC encryption parameters, DMR voice link control, NXDN voice call or initialization
+   vector), it stops and its tuner channel is released.  The call is remembered as encrypted, so the grant updates that
+   keep arriving for the rest of the call don't tune it again.  It is forgotten once those updates stop.
+
+Two-timeslot channels (P25 Phase 2 and DMR) stay tuned while the other timeslot carries a clear call or data, and are
+released when that clear call ends while the encrypted call continues.  Conventional (non-trunked) channels are never
+stopped.  Dropped calls still appear in the Events tab, labeled `IGNORED: ENCRYPTED` (or `IGNORED ENCRYPTED` for NXDN),
+and `IGNORED: ENCRYPTED - TRAFFIC CHANNEL RELEASED` for P25 calls that were released after tuning.
+
+Known limitations:
+* A call is only dropped after tuning once encrypted audio is detected, so the tuner channel is in use for the first
+  fraction of a second of the call.
+* A clear transmission is tuned only when it can be told apart from the encrypted call that was dropped: a new channel
+  grant from a different talker, a different talkgroup, or a gap of a few seconds in the grant updates.  If the same
+  radio switches from encrypted to clear on the same talkgroup and channel without a gap, that transmission is missed.
+* The DMR grant protect flag is what upstream sdrtrunk already shows as `ENCRYPTED` on DMR channel grants.  If a
+  system sets it on clear calls, those calls are ignored too; turn the option off for that system.
+
+### Building this fork
+Building needs the BellSoft Liberica JDK 27 **Full** package (it includes JavaFX).  If Gradle doesn't find it on its
+own, point Gradle at it:
+```
+./gradlew test -Porg.gradle.java.installations.paths=/path/to/jdk-27-full
+./gradlew runtimeZipCurrent -Porg.gradle.java.installations.paths=/path/to/jdk-27-full
+```
+The release image is created in `build/image/`.  To pick up upstream changes, fetch the `upstream` remote
+(`https://github.com/DSheirer/sdrtrunk.git`) and merge `upstream/master`.
+
 > ## 📖 [Read the sdrtrunk User Manual](https://github.com/DSheirer/sdrtrunk/wiki/User-Manual)
 > New to sdrtrunk? Start with the **[Getting Started](https://github.com/DSheirer/sdrtrunk/wiki/Getting-Started)** guide,
 > then use the **[User Manual](https://github.com/DSheirer/sdrtrunk/wiki/User-Manual)** and

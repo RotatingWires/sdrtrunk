@@ -110,6 +110,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     private static final Logger mLog = LoggerFactory.getLogger(P25TrafficChannelManager.class);
     private static final LoggingSuppressor LOGGING_SUPPRESSOR = new LoggingSuppressor(mLog);
     public static final String CHANNEL_START_REJECTED = "CHANNEL START REJECTED";
+    public static final String ENCRYPTED_CALL_IGNORED = "IGNORED: ENCRYPTED";
+    public static final String ENCRYPTED_CALL_RELEASED = ENCRYPTED_CALL_IGNORED + " - TRAFFIC CHANNEL RELEASED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
 
     private Queue<Channel> mAvailablePhase1TrafficChannelQueue = new LinkedTransferQueue<>();
@@ -148,6 +150,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             createPhase1TrafficChannels(phase1.getTrafficChannelPoolSize(), phase1);
             DecodeConfigP25Phase2 phase2 = new DecodeConfigP25Phase2();
             DecoderFactory.transferJMBESettings(phase1, phase2);
+            phase2.setIgnoreEncryptedCalls(mIgnoreEncryptedCalls);
             createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), phase2);
         }
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)
@@ -156,6 +159,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             mIgnoreEncryptedCalls = phase2.getIgnoreEncryptedCalls();
             DecodeConfigP25Phase1 phase1 = new DecodeConfigP25Phase1();
             DecoderFactory.transferJMBESettings(phase2, phase1);
+            phase1.setIgnoreEncryptedCalls(mIgnoreEncryptedCalls);
             createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), phase1);
             createPhase2TrafficChannels(phase2.getTrafficChannelPoolSize(), phase2);
         }
@@ -533,6 +537,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             if(tracker != null)
             {
                 tracker.addIdentifierIfMissing(identifier);
+                updateEncrypted(tracker, identifier);
                 tracker.updateDurationTraffic(timestamp);
                 broadcast(tracker);
             }
@@ -705,6 +710,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
 
                 tracker.addDetailsIfMissing(additionalDetails);
                 tracker.addChannelDescriptorIfMissing(channelDescriptor);
+                updateEncrypted(tracker, serviceOptions);
                 broadcast(tracker);
                 return tracker.getEvent().getChannelDescriptor();
             }
@@ -719,6 +725,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                     .build();
 
             tracker = new P25ChannelEventTracker(callEvent);
+            updateEncrypted(tracker, serviceOptions);
             addTracker(tracker, frequency, timeslot);
             broadcast(tracker);
             return null;
@@ -868,6 +875,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                 addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
             }
 
+            updateEncrypted(tracker, eki);
             broadcast(tracker);
         }
         finally
@@ -937,6 +945,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                     tracker.addDetailsIfMissing(eki.toString());
                 }
 
+                updateEncrypted(tracker, identifier);
                 tracker.updateDurationTraffic(timestamp);
                 broadcast(tracker);
             }
@@ -1024,6 +1033,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                     {
                         tracker.addDetailsIfMissing(eki.toString());
                     }
+
+                    updateEncrypted(tracker, identifier);
                 }
 
                 tracker.updateDurationTraffic(timestamp);
@@ -1048,6 +1059,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             .build();
 
                     tracker = new P25ChannelEventTracker(callEvent);
+                    updateEncrypted(tracker, eki);
                     addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
                     broadcast(tracker);
                 }
@@ -1094,6 +1106,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
 
                 tracker.updateDurationTraffic(timestamp);
                 tracker.addDetailsIfMissing(additionalDetails);
+                updateEncrypted(tracker, serviceOptions);
                 broadcast(tracker);
                 return;
             }
@@ -1107,6 +1120,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                     .build();
 
             tracker = new P25ChannelEventTracker(callEvent);
+            updateEncrypted(tracker, serviceOptions);
             addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
             broadcast(tracker);
         }
@@ -1215,6 +1229,54 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         if(isEncrypted(serviceOptions))
         {
             tracker.setEncrypted(true);
+        }
+    }
+
+    /**
+     * Updates the tracker's encrypted flag from an encryption key identifier reported by a traffic channel.  Like
+     * the service options variant, the flag is only ever set.
+     */
+    private static void updateEncrypted(P25ChannelEventTracker tracker, Identifier identifier)
+    {
+        if(identifier instanceof EncryptionKeyIdentifier eki && eki.isEncrypted())
+        {
+            tracker.setEncrypted(true);
+        }
+    }
+
+    /**
+     * Processes the tracked call event for a timeslot of a traffic channel that stopped processing.  The tracker is
+     * normally removed.  When ignoring encrypted calls, an encrypted call (ie the traffic channel was released because
+     * the call is encrypted) keeps its tracker, and the control channel resumes updating it, so that further channel
+     * grant updates for the call are recognized as encrypted and don't allocate the traffic channel again.  The tracker
+     * is removed as usual once the updates stop and it goes stale, or when a different call uses the channel.
+     *
+     * Note: this method is not thread safe and the calling method must protect access using mLock.
+     *
+     * @param frequency of the stopped traffic channel
+     * @param timeslot of the tracked call event
+     */
+    private void processTrafficChannelStopped(long frequency, int timeslot)
+    {
+        P25ChannelEventTracker tracker = getTracker(frequency, timeslot);
+
+        if(tracker != null && mIgnoreEncryptedCalls && tracker.isEncrypted())
+        {
+            tracker.resumeControlUpdates();
+
+            //A call that was ignored at the channel grant (ie the other timeslot's call tuned the channel) keeps its
+            //label since its traffic channel wasn't released
+            String details = tracker.getEvent().getDetails();
+            if(details == null || !details.startsWith(ENCRYPTED_CALL_IGNORED))
+            {
+                tracker.prefixDetails(ENCRYPTED_CALL_RELEASED);
+            }
+
+            broadcast(tracker);
+        }
+        else
+        {
+            removeTracker(frequency, timeslot);
         }
     }
 
@@ -1371,7 +1433,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         {
             P25ChannelGrantEvent event = P25ChannelGrantEvent.builder(decodeEventType, timestamp, serviceOptions)
                     .channelDescriptor(apco25Channel)
-                    .details("IGNORED: ENCRYPTED - PHASE 1 CHANNEL GRANT " + serviceOptions)
+                    .details(ENCRYPTED_CALL_IGNORED + " - PHASE 1 CHANNEL GRANT " + serviceOptions)
                     .identifiers(ic)
                     .build();
             tracker = new P25ChannelEventTracker(event);
@@ -1509,7 +1571,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         {
             P25ChannelGrantEvent event = P25ChannelGrantEvent.builder(decodeEventType, timestamp, serviceOptions)
                 .channelDescriptor(apco25Channel)
-                .details("IGNORED: ENCRYPTED - PHASE 2 CHANNEL GRANT " + serviceOptions)
+                .details(ENCRYPTED_CALL_IGNORED + " - PHASE 2 CHANNEL GRANT " + serviceOptions)
                 .identifiers(ic)
                 .timeslot(timeslot)
                 .build();
@@ -1858,7 +1920,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                                     .findFirst()
                                     .ifPresent(frequency -> {
                                         mAllocatedTrafficChannelMap.remove(frequency);
-                                        removeTracker(frequency, P25P1Message.TIMESLOT_1);
+                                        processTrafficChannelStopped(frequency, P25P1Message.TIMESLOT_1);
                                         mAvailablePhase1TrafficChannelQueue.add(channel);
                                     });
                             break;
@@ -1907,9 +1969,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                                     .ifPresent(frequency -> {
                                         mAllocatedTrafficChannelMap.remove(frequency);
                                         mAvailablePhase2TrafficChannelQueue.add(channel);
-                                        //Remove tracker from both timeslots
-                                        removeTracker(frequency, P25P1Message.TIMESLOT_1);
-                                        removeTracker(frequency, P25P1Message.TIMESLOT_2);
+                                        processTrafficChannelStopped(frequency, P25P1Message.TIMESLOT_1);
+                                        processTrafficChannelStopped(frequency, P25P1Message.TIMESLOT_2);
                                     });
                             break;
                         case NOTIFICATION_PROCESSING_START_REJECTED:

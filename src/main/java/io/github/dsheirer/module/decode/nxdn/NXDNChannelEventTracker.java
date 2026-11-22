@@ -30,6 +30,7 @@ import io.github.dsheirer.module.decode.event.DecodeEvent;
 public class NXDNChannelEventTracker extends ChannelEventTracker<DecodeEvent>
 {
     private boolean mTrafficChannelAllocated = false;
+    private boolean mEncrypted = false;
 
     /**
      * Constructs an instance
@@ -56,5 +57,22 @@ public class NXDNChannelEventTracker extends ChannelEventTracker<DecodeEvent>
     public void setTrafficChannelAllocated(boolean allocated)
     {
         mTrafficChannelAllocated = allocated;
+    }
+
+    /**
+     * Indicates if the call assignment or the traffic channel identified the call as encrypted.
+     */
+    public boolean isEncrypted()
+    {
+        return mEncrypted;
+    }
+
+    /**
+     * Marks the call as encrypted.  This is only ever set, since a later message that doesn't carry the encryption
+     * state (or a corrupted message) shouldn't make a known encrypted call look unencrypted.
+     */
+    public void setEncrypted()
+    {
+        mEncrypted = true;
     }
 }

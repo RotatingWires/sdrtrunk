@@ -907,6 +907,7 @@ public class DecoderFactory
                 case DMR:
                     DecodeConfigDMR originalDMR = (DecodeConfigDMR)config;
                     DecodeConfigDMR copyDMR = new DecodeConfigDMR();
+                    copyDMR.setIgnoreEncryptedCalls(originalDMR.getIgnoreEncryptedCalls());
                     transferJMBESettings(originalDMR, copyDMR);
                     return copyDMR;
                 case LTR_NET:
@@ -944,6 +945,7 @@ public class DecoderFactory
                     copyNXDN.setChannelMap(origNXDN.getChannelMap());
                     copyNXDN.setTransmissionMode(origNXDN.getTransmissionMode());
                     copyNXDN.setTrafficChannelPoolSize(origNXDN.getTrafficChannelPoolSize());
+                    copyNXDN.setIgnoreEncryptedCalls(origNXDN.getIgnoreEncryptedCalls());
                     transferJMBESettings(origNXDN, copyNXDN);
                     return copyNXDN;
                 case P25_PHASE1:

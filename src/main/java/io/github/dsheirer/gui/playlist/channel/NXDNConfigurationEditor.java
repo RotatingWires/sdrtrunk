@@ -548,6 +548,9 @@ public class NXDNConfigurationEditor extends ChannelConfigurationEditor
             mIgnoreEncryptedCallsToggle = new AccessibleToggleSwitch("Encrypted Calls");
             mIgnoreEncryptedCallsToggle.setAccessibleText("Ignore encrypted calls");
             mIgnoreEncryptedCallsToggle.setDisable(true);
+            mIgnoreEncryptedCallsToggle.setTooltip(new Tooltip("Don't tune a traffic channel when the call " +
+                    "assignment indicates the call is encrypted, and release a traffic channel (and its tuner) as " +
+                    "soon as it detects an encrypted call."));
             mIgnoreEncryptedCallsToggle.selectedProperty().addListener((o, ov, nv) -> modifiedProperty().set(true));
         }
 
@@ -691,7 +694,7 @@ public class NXDNConfigurationEditor extends ChannelConfigurationEditor
             }
 
             getIgnoreDataCallsToggle().setSelected(configNXDN.isIgnoreDataCalls());
-            getIgnoreEncryptedCallsToggle().setSelected(configNXDN.isIgnoreEncryptedCalls());
+            getIgnoreEncryptedCallsToggle().setSelected(configNXDN.getIgnoreEncryptedCalls());
             getJmbeAGCButton().setSelected(configNXDN.isAGC());
             getJmbeNoiseGainSlider().setValue(configNXDN.getComfortNoiseGain());
             getJmbeToneGainSlider().setValue(configNXDN.getToneGain());
