@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.channel.state;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.eventbus.Subscribe;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
@@ -48,6 +49,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +77,8 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
 
     public static final long FADE_TIMEOUT_DELAY = 1200;
     public static final long RESET_TIMEOUT_DELAY = 2000;
+    //How long an encrypted call keeps the channel after the last clear call or data on any timeslot
+    public static final long CLEAR_CALL_HOLD_MS = 5000;
 
     private IdentifierUpdateNotificationProxy mIdentifierUpdateNotificationProxy = new IdentifierUpdateNotificationProxy();
     private DecoderStateEventReceiver mDecoderStateEventReceiver = new DecoderStateEventReceiver();
@@ -86,6 +90,8 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
     private int[] mTimeslots;
     private DecoderStateNotificationEventCache mStateNotificationCache = new DecoderStateNotificationEventCache();
     private Listener<IdentifierUpdateNotification> mIdentifierUpdateListener = new IdentifierUpdateListenerProxy();
+    private LongSupplier mClock = System::currentTimeMillis;
+    private long mLastClearActivity;
 
     /**
      * Constructs an instance
@@ -184,13 +190,17 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
     }
 
     /**
-     * Releases the traffic channel when a timeslot is carrying an encrypted call and no timeslot is carrying a clear
-     * call or data.  This is checked on every state change so that a channel held open by a clear call on the other
-     * timeslot is released once that clear call ends while the encrypted call continues.
+     * Releases the traffic channel when a timeslot is carrying an encrypted call and no timeslot has carried a clear
+     * call or data for the clear call hold period.  The hold keeps the channel for a clear call on the other timeslot
+     * that was granted but hasn't started yet, and between the transmissions of a clear conversation, when that
+     * timeslot is briefly idle.  Releasing then would cut up the clear call and re-tune the channel for each of its
+     * transmissions.  This is checked on every state change and heartbeat, so that a channel held open by a clear call
+     * on the other timeslot is released once that clear call ends while the encrypted call continues.
      */
     private void checkEncryptedRelease()
     {
         boolean encrypted = false;
+        long now = mClock.getAsLong();
 
         for(StateMachine stateMachine: mStateMachineMap.values())
         {
@@ -198,16 +208,26 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
 
             if(state == State.CALL || state == State.DATA)
             {
+                mLastClearActivity = now;
                 return;
             }
 
             encrypted |= state == State.ENCRYPTED;
         }
 
-        if(encrypted)
+        if(encrypted && now - mLastClearActivity >= CLEAR_CALL_HOLD_MS)
         {
             releaseEncryptedTrafficChannel();
         }
+    }
+
+    /**
+     * Sets the clock that the clear call hold is timed with.
+     */
+    @VisibleForTesting
+    void setClock(LongSupplier clock)
+    {
+        mClock = clock;
     }
 
     /**
@@ -276,6 +296,11 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
         for(StateMachine stateMachine: mStateMachineMap.values())
         {
             stateMachine.checkState();
+        }
+
+        if(isIgnoreEncryptedTrafficChannel())
+        {
+            checkEncryptedRelease();
         }
     }
 
@@ -433,6 +458,8 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
     public void start()
     {
         clearEncryptedReleaseRequest();
+        //A traffic channel starts for a call that was just granted, so the clear call hold starts with it
+        mLastClearActivity = mClock.getAsLong();
 
         for(int timeslot: mTimeslots)
         {

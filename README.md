@@ -39,9 +39,10 @@ When the option is on, encrypted calls are dropped in two stages:
    vector), it stops and its tuner channel is released.  The call is remembered as encrypted, so the grant updates that
    keep arriving for the rest of the call don't tune it again.  It is forgotten once those updates stop.
 
-Two-timeslot channels (P25 Phase 2 and DMR) stay tuned while the other timeslot carries a clear call or data, and are
-released when that clear call ends while the encrypted call continues.  Conventional (non-trunked) channels are never
-stopped.  Dropped calls still appear in the Events tab, labeled `IGNORED: ENCRYPTED` (or `IGNORED ENCRYPTED` for NXDN),
+Two-timeslot channels (P25 Phase 2 and DMR) stay tuned while the other timeslot carries a clear call or data, and for 5
+seconds after its last clear audio, so that a clear call that was just granted, or the pauses between the transmissions
+of a clear conversation, don't get the channel released and the clear call cut up.  The channel is released once the
+encrypted call has had it to itself for those 5 seconds.  Conventional (non-trunked) channels are never stopped.  Dropped calls still appear in the Events tab, labeled `IGNORED: ENCRYPTED` (or `IGNORED ENCRYPTED` for NXDN),
 and `IGNORED: ENCRYPTED - TRAFFIC CHANNEL RELEASED` for P25 calls that were released after tuning.
 
 Known limitations:
