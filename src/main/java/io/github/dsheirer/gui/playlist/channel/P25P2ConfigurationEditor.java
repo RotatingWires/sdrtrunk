@@ -318,7 +318,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             mIgnoreEncryptedCallsButton.setDisable(true);
             mIgnoreEncryptedCallsButton.setTooltip(new Tooltip("Don't tune a traffic channel when the channel grant indicates the call is encrypted, " +
                     "and release a traffic channel (and its tuner) as soon as it detects an encrypted call.  " +
-                    "Phase 2: the channel stays tuned while the other timeslot has a clear call."));
+                    "Phase 2: the channel stays tuned while the other timeslot has a clear call, and for a few seconds after it."));
             mIgnoreEncryptedCallsButton.selectedProperty()
                 .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
         }

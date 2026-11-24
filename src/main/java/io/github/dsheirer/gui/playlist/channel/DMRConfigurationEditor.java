@@ -538,7 +538,8 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
             mIgnoreEncryptedCallsButton.setDisable(true);
             mIgnoreEncryptedCallsButton.setTooltip(new Tooltip("Don't tune a traffic channel when the channel grant " +
                     "indicates the call is encrypted, and release a traffic channel (and its tuner) as soon as it " +
-                    "detects an encrypted call.  The channel stays tuned while the other timeslot has a clear call."));
+                    "detects an encrypted call.  The channel stays tuned while the other timeslot has a clear call, " +
+                    "and for a few seconds after it."));
             mIgnoreEncryptedCallsButton.selectedProperty()
                 .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
         }
