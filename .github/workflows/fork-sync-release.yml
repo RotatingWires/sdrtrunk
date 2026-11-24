@@ -1,8 +1,8 @@
-# Keeps this fork in step with DSheirer/sdrtrunk and publishes a Windows build of it.
+# Keeps this fork in step with DSheirer/sdrtrunk and publishes Windows and Linux builds of it.
 #
 # Every day (or when run by hand from the Actions tab) this workflow:
 #  1. merges upstream master into this fork's master, the same as GitHub's "Sync fork" button,
-#  2. if that commit hasn't been released yet, runs the tests and builds the Windows x86-64 release zip,
+#  2. if that commit hasn't been released yet, runs the tests and builds the Linux and Windows x86-64 release zips,
 #  3. publishes it as a 'fork-<version>' GitHub release, keeping the newest 10.
 #
 # When the merge conflicts, or the tests or build fail, nothing is published and the run's summary says what to do.
@@ -119,6 +119,12 @@ jobs:
         if: steps.release.outputs.build == 'true'
         run: ./gradlew clean build --console=plain
 
+      # The runtime plugin can't build Windows and Linux in the same invocation.  runtimeZipCurrent packages this
+      # x86-64 Linux runner's JDK, the same build that upstream's release downloads for Linux x86-64.
+      - name: Build Linux release
+        if: steps.release.outputs.build == 'true'
+        run: ./gradlew runtimeZipCurrent --console=plain
+
       - name: Build Windows release
         if: steps.release.outputs.build == 'true'
         run: ./gradlew runtimeZipWindows --console=plain
@@ -130,21 +136,24 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          zip="build/image/sdr-trunk-windows-x86_64-v${VERSION}.zip"
-          if [ ! -f "$zip" ]; then
-            echo "::error::Missing $zip"
-            ls -l build/image
-            exit 1
-          fi
           mkdir -p release
-          cp "$zip" release/
+          for platform in linux-x86_64 windows-x86_64; do
+            zip="build/image/sdr-trunk-${platform}-v${VERSION}.zip"
+            if [ ! -f "$zip" ]; then
+              echo "::error::Missing $zip"
+              ls -l build/image
+              exit 1
+            fi
+            cp "$zip" release/
+          done
           (cd release && sha256sum *.zip > SHA256SUMS)
 
           previous="$(gh release list --limit 100 --json tagName,createdAt \
             --jq '[.[] | select(.tagName | startswith("fork-"))] | sort_by(.createdAt) | last | .tagName // ""')"
           {
-            echo "Windows x86-64 build of this fork at \`$(git rev-parse --short HEAD)\`: upstream sdrtrunk plus the"
-            echo "Ignore Encrypted Calls changes described in the README. Unzip it and run \`bin\\sdr-trunk.bat\`."
+            echo "Windows and Linux (x86-64) builds of this fork at \`$(git rev-parse --short HEAD)\`: upstream sdrtrunk plus"
+            echo "the Ignore Encrypted Calls changes described in the README. Unzip the one for your system and run"
+            echo "\`bin\\sdr-trunk.bat\` (Windows) or \`bin/sdr-trunk\` (Linux)."
             echo
             if [ -n "$previous" ] && git rev-parse -q --verify "refs/tags/$previous" >/dev/null; then
               echo "### Changes since $previous"

@@ -56,11 +56,12 @@ Known limitations:
 ### Downloading a build
 The **Fork Sync and Release** workflow (`.github/workflows/fork-sync-release.yml`) runs every day at 10:23 UTC and can
 also be run by hand from the Actions tab.  It merges upstream `master` into this fork's `master` (the same as GitHub's
-**Sync fork** button), then runs the tests and builds the Windows x86-64 zip.  If that commit doesn't have a release yet,
-the workflow publishes the zip and a `SHA256SUMS` file as a `fork-<version>` release, with the upstream changes since the
-previous release in its notes.  The newest 10 releases are kept.  Download the latest from the Releases page, unzip it,
-and run `bin\sdr-trunk.bat`.  The version shown in the app is upstream's latest version tag plus the number of commits
-since it and the commit id, for example `1.0.0-53-g1a2b3c4`.
+**Sync fork** button), then runs the tests and builds the Windows and Linux x86-64 zips (no ARM or Mac builds).  If
+that commit doesn't have a release yet, the workflow publishes the zips and a `SHA256SUMS` file as a `fork-<version>`
+release, with the upstream changes since the previous release in its notes.  The newest 10 releases are kept.  Download
+the zip for your system from the Releases page, unzip it, and run `bin\sdr-trunk.bat` on Windows or `bin/sdr-trunk` on
+Linux.  The version shown in the app is upstream's latest version tag plus the number of commits since it and the commit
+id, for example `1.0.0-53-g1a2b3c4`.
 
 When the merge conflicts, or the tests or build fail, nothing is published.  GitHub emails a failed scheduled run, and the
 run's summary says what to do.  A conflict is resolved by merging `upstream/master` into `master` by hand.  If upstream
