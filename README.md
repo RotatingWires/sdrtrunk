@@ -53,14 +53,31 @@ Known limitations:
 * The DMR grant protect flag is what upstream sdrtrunk already shows as `ENCRYPTED` on DMR channel grants.  If a
   system sets it on clear calls, those calls are ignored too; turn the option off for that system.
 
+### Downloading a build
+The **Fork Sync and Release** workflow (`.github/workflows/fork-sync-release.yml`) runs every day at 10:23 UTC and can
+also be run by hand from the Actions tab.  It merges upstream `master` into this fork's `master` (the same as GitHub's
+**Sync fork** button), then runs the tests and builds the Windows x86-64 zip.  If that commit doesn't have a release yet,
+the workflow publishes the zip and a `SHA256SUMS` file as a `fork-<version>` release, with the upstream changes since the
+previous release in its notes.  The newest 10 releases are kept.  Download the latest from the Releases page, unzip it,
+and run `bin\sdr-trunk.bat`.  The version shown in the app is upstream's latest version tag plus the number of commits
+since it and the commit id, for example `1.0.0-53-g1a2b3c4`.
+
+When the merge conflicts, or the tests or build fail, nothing is published.  GitHub emails a failed scheduled run, and the
+run's summary says what to do.  A conflict is resolved by merging `upstream/master` into `master` by hand.  If upstream
+changed its own workflow files, the workflow isn't allowed to merge them, so press **Sync fork** on GitHub instead.  The
+next run then builds it.  Upstream's own Nightly Release and Release workflows are disabled in this fork, so they don't
+publish here.  GitHub pauses scheduled workflows in a repository that has had no activity for 60 days.  If that happens,
+enable the workflow again from the Actions tab.
+
 ### Building this fork
-Building needs the BellSoft Liberica JDK 27 **Full** package (it includes JavaFX).  If Gradle doesn't find it on its
-own, point Gradle at it:
+Building needs the BellSoft Liberica JDK 27 **Full** package (it includes JavaFX).  Packaging a release needs the exact
+JDK build that `build.gradle` downloads for the bundled runtime (`jdk_download_base`, currently 27+36), because jlink
+refuses any other build.  If Gradle doesn't find the JDK on its own, point Gradle at it:
 ```
 ./gradlew test -Porg.gradle.java.installations.paths=/path/to/jdk-27-full
-./gradlew runtimeZipCurrent -Porg.gradle.java.installations.paths=/path/to/jdk-27-full
+./gradlew runtimeZipWindows -Porg.gradle.java.installations.paths=/path/to/jdk-27-full
 ```
-The release image is created in `build/image/`.  To pick up upstream changes, fetch the `upstream` remote
+The release zips are created in `build/image/`.  To pick up upstream changes by hand, fetch the `upstream` remote
 (`https://github.com/DSheirer/sdrtrunk.git`) and merge `upstream/master`.
 
 > ## 📖 [Read the sdrtrunk User Manual](https://github.com/DSheirer/sdrtrunk/wiki/User-Manual)

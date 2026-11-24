@@ -1,0 +1,172 @@
+# Keeps this fork in step with DSheirer/sdrtrunk and publishes a Windows build of it.
+#
+# Every day (or when run by hand from the Actions tab) this workflow:
+#  1. merges upstream master into this fork's master, the same as GitHub's "Sync fork" button,
+#  2. if that commit hasn't been released yet, runs the tests and builds the Windows x86-64 release zip,
+#  3. publishes it as a 'fork-<version>' GitHub release, keeping the newest 10.
+#
+# When the merge conflicts, or the tests or build fail, nothing is published and the run's summary says what to do.
+# Only runs in a fork, so it never runs in the upstream repository.
+name: Fork Sync and Release
+
+on:
+  schedule:
+    - cron: '23 10 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build and release even when this commit already has a release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-sync-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: DSheirer/sdrtrunk
+  KEEP_RELEASES: 10
+
+jobs:
+  sync-and-release:
+    if: github.event.repository.fork
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Merge upstream master
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! result="$(gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=master 2>&1)"; then
+            echo "$result"
+            {
+              echo "## Upstream sync needs attention"
+              echo
+              echo "GitHub couldn't merge \`$UPSTREAM\` master into this fork automatically:"
+              echo
+              echo '```'
+              echo "$result"
+              echo '```'
+              echo
+              echo "A conflict needs resolving by hand (or by asking Claude to merge upstream into the fork)."
+              echo "If upstream changed its own workflow files, the automatic merge isn't allowed to commit them:"
+              echo "press **Sync fork** on the fork's GitHub page instead. The next scheduled run then builds it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "$result"
+          echo "Upstream merge: $(echo "$result" | jq -r '.merge_type // "none"')" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          # Full history and tags, so the build can describe the commit relative to the latest version tag
+          fetch-depth: 0
+
+      # Version tags are not copied into a fork when it syncs, and the build version comes from them
+      - name: Fetch upstream version tags
+        run: git fetch --no-tags "https://github.com/$UPSTREAM.git" 'refs/tags/v*:refs/tags/v*'
+
+      - name: Check for an existing release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          version="$(git describe --tags --match 'v[0-9]*')"
+          version="${version#v}"
+          tag="fork-$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Release $tag already exists for $(git rev-parse --short HEAD); nothing to build." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # jlink needs the exact JDK build that build.gradle downloads for the Windows runtime
+      - name: Find the JDK version that build.gradle packages
+        if: steps.release.outputs.build == 'true'
+        id: jdk
+        run: |
+          build="$(sed -n 's|.*jdk_download_base = "https://download.bell-sw.com/java/\([^/]*\)/.*|\1|p' build.gradle)"
+          if [ -z "$build" ]; then
+            echo "::error::Couldn't find jdk_download_base in build.gradle"
+            exit 1
+          fi
+          version="${build%%+*}"
+          while [ "$(echo "$version" | tr -cd . | wc -c)" -lt 2 ]; do version="$version.0"; done
+          echo "Packaging JDK $build, setting up Liberica $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
+        if: steps.release.outputs.build == 'true'
+        uses: actions/setup-java@v6
+        with:
+          java-version: ${{ steps.jdk.outputs.version }}
+          distribution: 'liberica'
+          java-package: 'jdk+fx'
+
+      - name: Set up Gradle
+        if: steps.release.outputs.build == 'true'
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and test
+        if: steps.release.outputs.build == 'true'
+        run: ./gradlew clean build --console=plain
+
+      - name: Build Windows release
+        if: steps.release.outputs.build == 'true'
+        run: ./gradlew runtimeZipWindows --console=plain
+
+      - name: Publish release
+        if: steps.release.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          zip="build/image/sdr-trunk-windows-x86_64-v${VERSION}.zip"
+          if [ ! -f "$zip" ]; then
+            echo "::error::Missing $zip"
+            ls -l build/image
+            exit 1
+          fi
+          mkdir -p release
+          cp "$zip" release/
+          (cd release && sha256sum *.zip > SHA256SUMS)
+
+          previous="$(gh release list --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("fork-"))] | sort_by(.createdAt) | last | .tagName // ""')"
+          {
+            echo "Windows x86-64 build of this fork at \`$(git rev-parse --short HEAD)\`: upstream sdrtrunk plus the"
+            echo "Ignore Encrypted Calls changes described in the README. Unzip it and run \`bin\\sdr-trunk.bat\`."
+            echo
+            if [ -n "$previous" ] && git rev-parse -q --verify "refs/tags/$previous" >/dev/null; then
+              echo "### Changes since $previous"
+              git log --no-merges --format='- %s (%h)' "$previous..HEAD"
+            else
+              echo "### Recent changes"
+              git log --no-merges --format='- %s (%h)' -20
+            fi
+          } > notes.md
+
+          gh release create "$TAG" release/* --target "$(git rev-parse HEAD)" \
+            --title "Fork build $VERSION" --notes-file notes.md --latest
+          echo "Published [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove old fork releases
+        if: steps.release.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq '(env.KEEP_RELEASES | tonumber) as $keep | [.[] | select(.tagName | startswith("fork-"))] | sort_by(.createdAt) | reverse | .[$keep:] | .[].tagName' |
+          while read -r old; do
+            echo "Removing $old"
+            gh release delete "$old" --yes --cleanup-tag
+          done
