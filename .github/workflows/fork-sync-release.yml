@@ -2,11 +2,12 @@
 #
 # Every day (or when run by hand from the Actions tab) this workflow:
 #  1. merges upstream master into this fork's master, the same as GitHub's "Sync fork" button,
-#  2. if that commit hasn't been released yet, runs the tests and builds the Linux and Windows x86-64 release zips,
-#  3. publishes it as a 'fork-<version>' GitHub release, keeping the newest 10.
+#  2. if that commit hasn't been released yet, runs the tests on Windows and on Linux, and builds the Linux and
+#     Windows x86-64 release zips,
+#  3. publishes them as a 'fork-<version>' GitHub release, keeping the newest 10.
 #
-# When the merge conflicts, or the tests or build fail, nothing is published and the run's summary says what to do.
-# Only runs in a fork, so it never runs in the upstream repository.
+# When the merge conflicts, or the tests or build fail on either system, nothing is published and the run's summary
+# says what to do.  Only runs in a fork, so it never runs in the upstream repository.
 name: Fork Sync and Release
 
 on:
@@ -31,9 +32,15 @@ env:
   KEEP_RELEASES: 10
 
 jobs:
-  sync-and-release:
+  sync:
     if: github.event.repository.fork
     runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.release.outputs.build }}
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      jdk: ${{ steps.jdk.outputs.version }}
 
     steps:
       - name: Merge upstream master
@@ -63,7 +70,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: master
-          # Full history and tags, so the build can describe the commit relative to the latest version tag
+          # Full history and tags, so the version can be described relative to the latest version tag
           fetch-depth: 0
 
       # Version tags are not copied into a fork when it syncs, and the build version comes from them
@@ -79,6 +86,7 @@ jobs:
           version="$(git describe --tags --match 'v[0-9]*')"
           version="${version#v}"
           tag="fork-$version"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if gh release view "$tag" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
@@ -88,7 +96,7 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # jlink needs the exact JDK build that build.gradle downloads for the Windows runtime
+      # jlink needs the exact JDK build that build.gradle downloads for the bundled runtime
       - name: Find the JDK version that build.gradle packages
         if: steps.release.outputs.build == 'true'
         id: jdk
@@ -103,38 +111,71 @@ jobs:
           echo "Packaging JDK $build, setting up Liberica $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  # The release zips are packaged on Linux, so this is where the tests run on Windows itself
+  test-windows:
+    needs: sync
+    if: needs.sync.outputs.build == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          fetch-depth: 0
+
       - name: Set up JDK
-        if: steps.release.outputs.build == 'true'
         uses: actions/setup-java@v6
         with:
-          java-version: ${{ steps.jdk.outputs.version }}
+          java-version: ${{ needs.sync.outputs.jdk }}
           distribution: 'liberica'
           java-package: 'jdk+fx'
 
       - name: Set up Gradle
-        if: steps.release.outputs.build == 'true'
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Build and test
-        if: steps.release.outputs.build == 'true'
+      - name: Build and test on Windows
+        run: ./gradlew clean build --console=plain
+
+  release:
+    needs: [sync, test-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          # Full history and tags, so the build can describe the commit relative to the latest version tag
+          fetch-depth: 0
+
+      - name: Fetch upstream version tags
+        run: git fetch --no-tags "https://github.com/$UPSTREAM.git" 'refs/tags/v*:refs/tags/v*'
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          java-version: ${{ needs.sync.outputs.jdk }}
+          distribution: 'liberica'
+          java-package: 'jdk+fx'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and test on Linux
         run: ./gradlew clean build --console=plain
 
       # The runtime plugin can't build Windows and Linux in the same invocation.  runtimeZipCurrent packages this
       # x86-64 Linux runner's JDK, the same build that upstream's release downloads for Linux x86-64.
       - name: Build Linux release
-        if: steps.release.outputs.build == 'true'
         run: ./gradlew runtimeZipCurrent --console=plain
 
       - name: Build Windows release
-        if: steps.release.outputs.build == 'true'
         run: ./gradlew runtimeZipWindows --console=plain
 
       - name: Publish release
-        if: steps.release.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ needs.sync.outputs.tag }}
+          VERSION: ${{ needs.sync.outputs.version }}
         run: |
           mkdir -p release
           for platform in linux-x86_64 windows-x86_64; do
@@ -176,7 +217,6 @@ jobs:
           fi
 
       - name: Remove old fork releases
-        if: steps.release.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

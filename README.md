@@ -55,22 +55,24 @@ Known limitations:
 
 ### Downloading a build
 The **Fork Sync and Release** workflow (`.github/workflows/fork-sync-release.yml`) runs every day at 10:23 UTC and can
-also be run by hand from the Actions tab.  It merges upstream `master` into this fork's `master` (the same as GitHub's
-**Sync fork** button), then runs the tests and builds the Windows and Linux x86-64 zips (no ARM or Mac builds).  If
-that commit doesn't have a release yet, the workflow publishes the zips and a `SHA256SUMS` file as a `fork-<version>`
-release, with the upstream changes since the previous release in its notes.  The newest 10 releases are kept.  Download
-the zip for your system from the Releases page, unzip it, and run `bin\sdr-trunk.bat` on Windows or `bin/sdr-trunk` on
-Linux.  The version shown in the app is upstream's latest version tag plus the number of commits since it and the commit
-id, for example `1.0.0-53-g1a2b3c4`.  To run it by hand, open **Fork Sync and Release** in the Actions tab and press
-**Run workflow** on `master`.  Ticking **Build and release even when this commit already has a release** rebuilds the
-current commit and replaces the files and notes of its existing release.
+also be run by hand from the Actions tab. It merges upstream `master` into this fork's `master` (the same as GitHub's
+**Sync fork** button). If that commit doesn't have a release yet, it runs the tests on Windows and on Linux, builds the
+Windows and Linux x86-64 zips on Linux (no ARM or Mac builds), and publishes the zips and a `SHA256SUMS` file as a
+`fork-<version>` release, with the upstream changes since the previous release in its notes. The newest 10 releases are
+kept. Download the zip for your system from the Releases page, unzip it, and run `bin\sdr-trunk.bat` on Windows or
+`bin/sdr-trunk` on Linux. The version shown in the app is upstream's latest version tag plus the number of commits since
+it and the commit id, for example `1.0.0-53-g1a2b3c4`. To run it by hand, open **Fork Sync and Release** in the Actions
+tab and press **Run workflow** on `master`. Ticking **Build and release even when this commit already has a release**
+rebuilds the current commit and replaces the files and notes of its existing release.
 
-When the merge conflicts, or the tests or build fail, nothing is published.  GitHub emails a failed scheduled run, and the
-run's summary says what to do.  A conflict is resolved by merging `upstream/master` into `master` by hand.  If upstream
-changed its own workflow files, the workflow isn't allowed to merge them, so press **Sync fork** on GitHub instead.  The
-next run then builds it.  Upstream's own Nightly Release and Release workflows are disabled in this fork, so they don't
-publish here.  GitHub pauses scheduled workflows in a repository that has had no activity for 60 days.  If that happens,
-enable the workflow again from the Actions tab.
+When the merge conflicts, or the tests or build fail on either system, nothing is published. GitHub emails a failed
+scheduled run, and the run's summary says what to do. A conflict is resolved by merging `upstream/master` into `master`
+by hand. If upstream changed its own workflow files, the workflow isn't allowed to merge them, so press **Sync fork** on
+GitHub instead. The next run then builds it. Upstream's own Nightly Release and Release workflows are disabled in this
+fork, so they don't publish here. Upstream's Java CI with Gradle workflow is disabled too: this workflow already tests
+every release on Windows and Linux, and that one's macOS job often can't get a GitHub-hosted Mac runner, which fails its
+run. GitHub pauses scheduled workflows in a repository that has had no activity for 60 days. If that happens, enable the
+workflow again from the Actions tab.
 
 ### Building this fork
 Building needs the BellSoft Liberica JDK 27 **Full** package (it includes JavaFX).  Packaging a release needs the exact
