@@ -149,7 +149,7 @@ jobs:
           (cd release && sha256sum *.zip > SHA256SUMS)
 
           previous="$(gh release list --limit 100 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("fork-"))] | sort_by(.createdAt) | last | .tagName // ""')"
+            --jq '[.[] | select((.tagName | startswith("fork-")) and .tagName != env.TAG)] | sort_by(.createdAt) | last | .tagName // ""')"
           {
             echo "Windows and Linux (x86-64) builds of this fork at \`$(git rev-parse --short HEAD)\`: upstream sdrtrunk plus"
             echo "the Ignore Encrypted Calls changes described in the README. Unzip the one for your system and run"
@@ -164,9 +164,16 @@ jobs:
             fi
           } > notes.md
 
-          gh release create "$TAG" release/* --target "$(git rev-parse HEAD)" \
-            --title "Fork build $VERSION" --notes-file notes.md --latest
-          echo "Published [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+          # A forced rebuild of a commit that already has a release replaces that release's files and notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+            echo "Rebuilt [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$TAG" release/* --target "$(git rev-parse HEAD)" \
+              --title "Fork build $VERSION" --notes-file notes.md --latest
+            echo "Published [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Remove old fork releases
         if: steps.release.outputs.build == 'true'

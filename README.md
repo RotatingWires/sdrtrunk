@@ -61,7 +61,9 @@ that commit doesn't have a release yet, the workflow publishes the zips and a `S
 release, with the upstream changes since the previous release in its notes.  The newest 10 releases are kept.  Download
 the zip for your system from the Releases page, unzip it, and run `bin\sdr-trunk.bat` on Windows or `bin/sdr-trunk` on
 Linux.  The version shown in the app is upstream's latest version tag plus the number of commits since it and the commit
-id, for example `1.0.0-53-g1a2b3c4`.
+id, for example `1.0.0-53-g1a2b3c4`.  To run it by hand, open **Fork Sync and Release** in the Actions tab and press
+**Run workflow** on `master`.  Ticking **Build and release even when this commit already has a release** rebuilds the
+current commit and replaces the files and notes of its existing release.
 
 When the merge conflicts, or the tests or build fail, nothing is published.  GitHub emails a failed scheduled run, and the
 run's summary says what to do.  A conflict is resolved by merging `upstream/master` into `master` by hand.  If upstream
