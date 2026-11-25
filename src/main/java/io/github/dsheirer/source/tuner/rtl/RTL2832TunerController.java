@@ -801,6 +801,14 @@ public class RTL2832TunerController extends TunerController
     }
 
     /**
+     * USB bus and port where this tuner is plugged in, ie USB Bus:1 Port:2.1
+     */
+    public String getUSBLocation()
+    {
+        return "USB Bus:" + mBus + " Port:" + mPortAddress;
+    }
+
+    /**
      * Provides a unique identifier to use in distinctly identifying this tuner from among other tuners of the same
      * type, so that we can fetch a tuner configuration from the settings manager for this specific tuner.
      *
@@ -823,7 +831,7 @@ public class RTL2832TunerController extends TunerController
             }
             else
             {
-                return "RTL-2832 USB Bus:" + mBus + " Port:" + mPortAddress;
+                return "RTL-2832 " + getUSBLocation();
             }
         }
         else

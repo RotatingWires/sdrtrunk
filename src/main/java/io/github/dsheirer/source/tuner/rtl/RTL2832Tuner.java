@@ -57,6 +57,17 @@ public class RTL2832Tuner extends Tuner
         return getUniqueID();
     }
 
+    /**
+     * Includes the USB location, since RTL-SDR dongles often share the same serial number (eg 00000001).
+     */
+    @Override
+    protected String getSampleDropMonitorName()
+    {
+        String name = getPreferredName();
+        String location = getController().getUSBLocation();
+        return name.contains(location) ? name : name + " " + location;
+    }
+
     @Override
     public String getUniqueID()
     {

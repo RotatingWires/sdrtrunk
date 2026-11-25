@@ -89,7 +89,7 @@ public abstract class Tuner implements ISourceEventProcessor, ITunerErrorListene
             try
             {
                 getTunerController().start();
-                getTunerController().setSampleDropMonitorTunerName(getPreferredName());
+                getTunerController().setSampleDropMonitorTunerName(getSampleDropMonitorName());
             }
             catch(SourceException se)
             {
@@ -225,6 +225,14 @@ public abstract class Tuner implements ISourceEventProcessor, ITunerErrorListene
     public TunerController getTunerController()
     {
         return mTunerController;
+    }
+
+    /**
+     * Name that identifies this tuner in the dropped samples log.  Defaults to the preferred name.
+     */
+    protected String getSampleDropMonitorName()
+    {
+        return getPreferredName();
     }
 
     /**
