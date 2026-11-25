@@ -39,6 +39,7 @@ import io.github.dsheirer.identifier.alias.TalkerAliasManager;
 import io.github.dsheirer.identifier.alias.TalkerAliasTracker;
 import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
 import io.github.dsheirer.identifier.decoder.DecoderLogicalChannelNameIdentifier;
+import io.github.dsheirer.identifier.encryption.EncryptionKeyIdentifier;
 import io.github.dsheirer.identifier.patch.PatchGroupIdentifier;
 import io.github.dsheirer.identifier.patch.PatchGroupManager;
 import io.github.dsheirer.identifier.patch.PatchGroupPreLoadDataContent;
@@ -203,6 +204,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      * algorithm ID takes precedence over the link control service options when it is known.
      */
     private Boolean mCallEncryptedByAlgorithm = null;
+    //Encryption reported by an LDU2 during a call established as clear, until the next LDU2 confirms it (else null)
+    private EncryptionKeyIdentifier mUnconfirmedEncryptionKey = null;
     //Keeps the talker alias matched to the talking radio and assigns received talker aliases to the right radio
     private final TalkerAliasTracker mTalkerAliasTracker = new TalkerAliasTracker(getIdentifierCollection(),
             this::getTalkerAliasManager, TalkerAliasTracker.BetweenCalls.PREVIOUS_TALKER);
@@ -893,6 +896,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 Identifier<?> radio = getIdentifierCollection().getFromIdentifier();
 
                 mCallEncryptedByAlgorithm = headerData.isEncryptedAudio();
+                mUnconfirmedEncryptionKey = null;
                 //A call starts.  The HDU doesn't identify the talker.
                 mTalkerAliasTracker.callActivity(message.getTimestamp());
                 mTrafficChannelManager.processP1TrafficCallStart(getCurrentFrequency(), talkgroup, radio,
@@ -936,6 +940,17 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(esp != null && esp.isValid())
             {
+                //An LDU2 that reports encryption during a call that the HDU or an earlier LDU2 established as clear is
+                //likely a corrupted frame (eg dropped samples) that the Reed-Solomon decoder mis-corrected, so wait for
+                //the next LDU2 to report the same algorithm and key before treating the call as encrypted.
+                if(esp.isEncryptedAudio() && Boolean.FALSE.equals(mCallEncryptedByAlgorithm) &&
+                        !esp.getEncryptionKey().equals(mUnconfirmedEncryptionKey))
+                {
+                    mUnconfirmedEncryptionKey = esp.getEncryptionKey();
+                    return;
+                }
+
+                mUnconfirmedEncryptionKey = null;
                 getIdentifierCollection().update(esp.getIdentifiers());
                 mCallEncryptedByAlgorithm = esp.isEncryptedAudio();
 
@@ -962,6 +977,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private void processTDU(P25P1Message message)
     {
         mCallEncryptedByAlgorithm = null;
+        mUnconfirmedEncryptionKey = null;
         mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
         clearCallUser();
         broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
@@ -994,6 +1010,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             if(lcw != null && lcw.isValid())
             {
                 mCallEncryptedByAlgorithm = null;
+                mUnconfirmedEncryptionKey = null;
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
                 processLC(lcw, message.getTimestamp(), true);
